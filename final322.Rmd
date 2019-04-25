@@ -1,0 +1,218 @@
+---
+title: "322Final"
+author: "Sam Snarr"
+date: "April 24, 2019"
+output: html_document
+---
+# Goal  
+Using the available data, the study investigators wish to determine if there a difference in the time to access failure or
+revision for different access types and which performs the best. It is additionally hypothesized that the venous transposition
+fistulas, which are needed when placement is difficult, often perform better in the elderly (defined as 65+).
+
+```{r, cache=TRUE}
+library(ggplot2)
+source('http://educ.jmu.edu/~wardex/math322/Math322Functions.R')
+dat = read.csv("http://educ.jmu.edu/~wardex/math322/data/accesssmall.csv")
+
+names(dat)
+```
+# 1  
+The participants data is only collected if they survived on the therapy at least 60 days. The participants were asked to participate randomly and from scattered locations around the country. So inference should be able to be made because of this random sampling scheme. Though some people with severe health conditions that cause them to die within the 60 days of starting the therapy may be excluded. 
+Also those who refused to be in the study, inference cannot be made about them. 
+
+# 2  
+* usrds_id - This is a nuisance variable that holds useless information. 
+* acctype - covariate of interest
+* failedorrevised - Outcome variable
+* age_ssd - Gives similar information as `age_65` so it will not be included in the model.
+* female - confounder - It is believed that females have an effect on access type and they may also have an effect on failure/revision time. 
+* racegrp - nuisance - This is not believed to have any effect on failure/revision time.     
+* bmi - confounder - Having a high BMI may influence both the amount of time until failure/revision and the access type received by the doctors.  
+* smokegrp - confounder - It is believed to have an effect on the access type and may also have an effect on failure/revision time.
+* dx_diab - confounder - It is believed to have an effect on access type and may also have an effect on failure/revision time. 
+* ser_cal - nuisance - Is not believed to have any effect on failure/revision time.
+* phosph - nuisance - Is not believed to have any effect on failure/revision time.
+* hemato - nuisance - Is not believed to have any effect on failure/revision time.
+* ser_alb - precision - Health status is likely to have a direct effect on failure/revision time. 
+* age_65 - precision - It is believed that age has an effect on failure/revision time. 
+
+# 3
+Some other important variables may be:
+* Drug use
+* Prior Health Problems
+* Mobility
+* Health Insurance
+* Income Status
+
+# 4
+The effect modifier hypothesized in the prompt is that Venous Transposition Fistulas perform better on the elderly. So we will want to include an effect modifier between `acctype` and `age_65`.
+
+# 5
+```{r }
+howmanymissing(dat)
+
+```
+There is very little missing data in this study. A complete case analysis will be used to handle the missing data. The data will be removed. 
+
+
+# 6
+```{r}
+knitr::include_graphics("C:\\Users\\sssna\\Pictures\\Screenshots\\table.jpg")
+```
+
+# 7 
+```{r "plot No Effect"}
+
+p=ggplot(data.frame(fail_revisit_time=dat$failedorrevised, access_type=dat$acctype, age65=dat$age_65), aes(x=access_type, y=fail_revisit_time,  color=access_type))+geom_boxplot()
+p+geom_jitter(size=0.15)
+#geom_dotplot(binaxis = 'y', dotsize=0.1, stackdir = 'center')
+
+```
+
+
+# 8
+```{r " fit w/o effect mod"}
+
+dat$smokegrp = factor(dat$smokegrp)
+
+fit1 = lm(failedorrevised~ 1 +acctype+female+bmi+smokegrp+dx_diab+ser_alb+age_65, data=dat)
+
+summary(fit1)
+
+```
+
+
+# 9 
+```{r "functional form plots"}
+ggplot(data.frame(bmi=fit1$model$bmi, resids=fit1$residuals), aes(x=bmi,y=resids)) + geom_point(alpha=0.2) + geom_smooth()
+ggplot(data.frame(serAlb=fit1$model$ser_alb, resids=fit1$residuals), aes(x=serAlb,y=resids)) + geom_point(alpha=0.2) + geom_smooth()
+
+#qqnorm(fit1$residuals)
+
+```
+
+The functional form on the previous numerical covariates are linear. 
+
+
+# 10
+```{r "nonconst variance"}
+# This might be nonconstant variance??
+
+ggplot(data.frame(resids=fit1$residuals, fitted=fit1$fitted.values), aes(x=fitted,y=resids)) + geom_point(alpha=0.2) + geom_smooth()  # nonconst variance
+
+
+```
+The fitted vs residuals shows nonconstant variance. So doing a log transformation and plotting again. 
+
+```{r}
+dat$logFailRevise = log(dat$failedorrevised)
+
+fit2 = lm(logFailRevise~ 1 +acctype+female+bmi+smokegrp+dx_diab+ser_alb+age_65, data=dat)
+summary(fit2)
+
+ggplot(data.frame(resids=fit2$residuals, fitted=fit2$fitted.values), aes(x=fitted,y=resids)) + geom_point(alpha=0.2) + geom_smooth() 
+```
+
+# 11 outlilers
+
+```{r}
+cook=df(0.2, 8, 1295-8)
+cook
+
+
+ggplot(data.frame(leverage=hatvalues(fit2), resids=fit2$residuals), aes(x=leverage, y=resids))+geom_point(alpha=0.2)
+
+ggplot(data.frame(cooks=cooks.distance(fit2), resids=fit2$residuals), aes(x=cooks, y=resids))+geom_point(alpha=0.2)
+
+dat[which(cooks.distance(fit2)>cook),] # there is none
+
+dat2=dat[which(hatvalues(fit2)<2*8/1295),]
+length(dat2$usrds_id) #135 high leverage outliers 
+
+```
+
+### There are lots of high leverage outliers
+
+# 12 
+Coefficients:
+             Estimate Std. Error t value Pr(>|t|)    
+(Intercept)  4.178362   0.256597  16.284  < 2e-16 ***
+acctypesf    0.239942   0.083128   2.886 0.003964 ** 
+acctypevtf   0.073601   0.131604   0.559 0.576084    
+female      -0.262662   0.073436  -3.577 0.000361 ***
+bmi          0.004442   0.004296   1.034 0.301341    
+smokegrp2   -0.068382   0.078782  -0.868 0.385568    
+smokegrp3   -0.124607   0.107445  -1.160 0.246382    
+dx_diab      0.050835   0.070929   0.717 0.473697    
+ser_alb      0.284284   0.060771   4.678 3.21e-06 ***
+age_65TRUE   0.033906   0.072103   0.470 0.638262   
+
+Covariate of interest `acctype`: (NOTE intercept does not have to be interpreted different with log transform)
+The intercept for `access type g` $=4.18$. That is, the expected log time until intervention with access type g when everything else is 0 is 4.18. The expected time until intervention with access type g when everything else is 0 is 65.26 days. 
+
+The intercept for `access type sf` $=4.42$. That is, the expected log time until intervention with access type sf when everything else is 0 is 4.41.The expected time until intervention with access type sf when everything else is 0 is 82.96 days.
+
+The intercept for `access type vtf` $=4.25$. That is, the expected log time until intervention with access type vtf when everything else is 0 is 4.25. The expected time until intervention with access type vtf when everything else is 0 is 70.24 days. 
+
+```{r 'remove outliers refit and interpret'}
+fit3 = lm(logFailRevise ~ 1 + acctype + female + bmi + smokegrp + dx_diab + ser_alb + age_65 , dat=dat2)
+summary(fit3)
+#exp(sum(coef(fit3)[c(1, 3)]))
+```
+The expected time until intervention with access type g when everything else is 0 is 62.42 days.
+The expected time until intervention with access type sf when everything else is 0 is 83.34 days.
+The expected time until intervention with access type vtf when everything else is 0 is 62.84 days.
+
+Those are the changes. 
+
+
+# 13 
+
+```{r "plot with Effect between age and vtf"}
+
+p=ggplot(data.frame(fail_revisit_time=dat2$failedorrevised, access_type=dat2$acctype, age65=dat2$age_65), aes(x=access_type, y=fail_revisit_time, fill=age65 ))+geom_boxplot()
+p
+
+```
+
+# 14
+
+```{r "fit w/ effect mod"}
+fit3=lm(logFailRevise~ 1 +female+bmi+smokegrp+dx_diab+ser_alb +age_65*acctype, data=dat2) 
+summary(fit3)
+```
+
+# 15
+
+```{r}
+ggplot(data.frame(resids=fit3$residuals, fitted=fit3$fitted.values), aes(x=fitted,y=resids)) + geom_point(alpha=0.2) + geom_smooth()
+ggplot(data.frame(bmi=fit3$model$bmi, resids=fit3$residuals), aes(x=bmi,y=resids)) + geom_point(alpha=0.2) + geom_smooth()
+ggplot(data.frame(serAlb=fit3$model$ser_alb, resids=fit3$residuals), aes(x=serAlb,y=resids)) + geom_point(alpha=0.2) + geom_smooth()
+
+ggplot(data.frame(leverage=hatvalues(fit3), resids=fit3$residuals), aes(x=leverage, y=resids))+geom_point(alpha=0.2)
+
+ggplot(data.frame(cooks=cooks.distance(fit3), resids=fit3$residuals), aes(x=cooks, y=resids))+geom_point(alpha=0.2)
+
+# do i need to do outliers for last model?
+dat2[which(cooks.distance(fit3)>cook),] # there is none
+
+dat3=dat2[which(hatvalues(fit3)>2*9/1295),]# there are 158 more outliers???
+length(dat3$usrds_id)
+#2*9/1295 =0.0135
+```
+There are no changes but there are some outliers which I am not sure whether or not to leave in. 
+
+# 16
+
+
+
+
+
+
+
+
+
+
+
+
+
